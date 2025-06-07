@@ -1,0 +1,19 @@
+<div class="container">
+  <h1>Gemini AI 文字生成</h1>
+  <div class="input-group">
+    <textarea
+      [(ngModel)]="prompt"
+      placeholder="輸入您的提示，例如：為什麼天空是藍色的？"
+      rows="4"
+      cols="50"
+    ></textarea>
+    <button (click)="generateResponse()" [disabled]="loading">
+      {{ loading ? '生成中...' : '生成' }}
+    </button>
+  </div>
+  <div class="error" *ngIf="error">{{ error }}</div>
+  <div class="response" *ngIf="response">
+    <h2>回應：</h2>
+    <p>{{ response }}</p>
+  </div>
+</div>
