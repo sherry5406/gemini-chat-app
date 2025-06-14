@@ -6,19 +6,19 @@ import { BehaviorSubject } from 'rxjs';
 
 @Component({
   selector: 'app-gemini-demo',
-  imports: [FormsModule,CommonModule],
-  standalone:true,
+  imports: [FormsModule, CommonModule],
+  standalone: true,
   templateUrl: './gemini-demo.component.html',
   styleUrl: './gemini-demo.component.scss',
 })
-
-
 export class GeminiDemoComponent implements OnInit, AfterViewInit {
   @ViewChild('messagesContainer') messagesContainer!: ElementRef;
   messages: ChatMessage[] = [];
   userInput = '';
   isLoading = false;
+  isStreaming = false;
   private messagesSubject = new BehaviorSubject<ChatMessage[]>([]);
+   currentStreamingMessageIndex = -1;
 
   constructor(private geminiService: GeminiService) {}
 
@@ -26,8 +26,18 @@ export class GeminiDemoComponent implements OnInit, AfterViewInit {
     // 從 localStorage 載入對話歷史
     const savedMessages = localStorage.getItem('chatHistory');
     if (savedMessages) {
-      this.messages = JSON.parse(savedMessages);
-      this.messagesSubject.next(this.messages);
+      try {
+        const parsed = JSON.parse(savedMessages);
+        // 重新建立 Date 物件，因為 JSON.parse 不會自動轉換日期
+        this.messages = parsed.map((msg: any) => ({
+          ...msg,
+          date: new Date(msg.date)
+        }));
+        this.messagesSubject.next(this.messages);
+      } catch (error) {
+        console.error('載入聊天記錄失敗:', error);
+        this.messages = [];
+      }
     }
 
     // 每 10 條訊息或每 5 分鐘檢查並精簡
@@ -48,6 +58,7 @@ export class GeminiDemoComponent implements OnInit, AfterViewInit {
     if (!this.userInput.trim()) return;
 
     this.isLoading = true;
+    this.isStreaming = false;
 
     const userMessage: ChatMessage = {
       text: this.userInput,
@@ -66,36 +77,101 @@ export class GeminiDemoComponent implements OnInit, AfterViewInit {
     this.saveToLocalStorage();
     this.scrollToBottom();
 
+    // 建立一個空的機器人訊息用於串流顯示
+    const botMessage: ChatMessage = {
+      text: '',
+      date: new Date(),
+      reply: false,
+      user: { name: '教養專家' }
+    };
+
+    this.messages.push(botMessage);
+    this.currentStreamingMessageIndex = this.messages.length - 1;
+    console.log('開始串流，訊息索引:', this.currentStreamingMessageIndex);
+
+    this.isLoading = false;
+    this.isStreaming = true;
+
     try {
-      // 使用保存的輸入，但不包含剛剛加入的使用者訊息
-      const historyWithoutCurrent = this.messages.slice(0, -1);
-      const botReply = await this.geminiService.generate(currentInput, historyWithoutCurrent);
+      // 使用保存的輸入，但不包含剛剛加入的使用者訊息和空機器人訊息
+      const historyWithoutCurrent = this.messages.slice(0, -2);
+      console.log('歷史訊息:', historyWithoutCurrent);
 
-      const botMessage: ChatMessage = {
-        text: botReply,
-        date: new Date(),
-        reply: false,
-        user: { name: '教養專家' }
-      };
+      const streamGenerator = this.geminiService.generateStream(currentInput, historyWithoutCurrent);
+      console.log('取得串流生成器:', streamGenerator);
 
-      this.messages.push(botMessage);
+      let fullResponse = '';
+      let chunkCount = 0;
+
+      for await (const chunk of streamGenerator) {
+        chunkCount++;
+        console.log(`收到第 ${chunkCount} 個 chunk:`, chunk);
+        fullResponse += chunk;
+
+        // 更新正在串流的訊息
+        if (this.currentStreamingMessageIndex >= 0 &&
+            this.currentStreamingMessageIndex < this.messages.length) {
+          this.messages[this.currentStreamingMessageIndex].text = fullResponse;
+          this.scrollToBottom();
+        }
+
+        // 添加一個小延遲來模擬打字效果
+        await this.delay(30);
+      }
+
+      console.log('串流完成，總共收到', chunkCount, '個 chunks');
+      console.log('完整回應:', fullResponse);
+
+      // 如果沒有收到任何內容，使用備用方法
+      if (!fullResponse.trim()) {
+        console.log('串流沒有收到內容，使用一般生成方法');
+        const fallbackResponse = await this.geminiService.generate(currentInput, historyWithoutCurrent);
+        this.messages[this.currentStreamingMessageIndex].text = fallbackResponse;
+      }
+
+      // 串流完成，保存最終結果
       this.saveToLocalStorage();
       this.messagesSubject.next(this.messages);
+
     } catch (error) {
-      console.error('Gemini API 錯誤:', error);
-      this.messages.push({
-        text: '抱歉，發生錯誤，請稍後再試。',
-        date: new Date(),
-        reply: false,
-        user: { name: '教養專家' }
-      });
+      console.error('串流錯誤:', error);
+
+      // 移除空的機器人訊息，添加錯誤訊息
+      if (this.currentStreamingMessageIndex >= 0) {
+        this.messages.splice(this.currentStreamingMessageIndex, 1);
+      }
+
+      // 嘗試使用非串流方式作為備用
+      try {
+        console.log('嘗試使用非串流方式...');
+        const historyWithoutCurrent = this.messages.slice(0, -1);
+        const fallbackResponse = await this.geminiService.generate(currentInput, historyWithoutCurrent);
+
+        this.messages.push({
+          text: fallbackResponse,
+          date: new Date(),
+          reply: false,
+          user: { name: '教養專家' }
+        });
+      } catch (fallbackError) {
+        console.error('備用方法也失敗:', fallbackError);
+        this.messages.push({
+          text: '抱歉，發生錯誤，請稍後再試。',
+          date: new Date(),
+          reply: false,
+          user: { name: '教養專家' }
+        });
+      }
     } finally {
-      this.isLoading = false;
+      this.isStreaming = false;
+      this.currentStreamingMessageIndex = -1;
+      console.log('串流結束');
       this.scrollToBottom();
     }
   }
+
   private async optimizeHistory() {
-    if (this.isLoading || this.messages.length < 10) return;
+    if (this.isLoading || this.isStreaming || this.messages.length < 10) return;
 
     this.isLoading = true;
     try {
@@ -105,6 +181,7 @@ export class GeminiDemoComponent implements OnInit, AfterViewInit {
 ${historyText}
 
 整理後的摘要請以條列式呈現，確保清晰且有邏輯。`;
+
       const summary = await this.geminiService.generate(prompt, []);
 
       // 清空舊歷史，存入摘要作為新歷史
@@ -125,13 +202,23 @@ ${historyText}
   }
 
   private saveToLocalStorage() {
-    localStorage.setItem('chatHistory', JSON.stringify(this.messages));
+    try {
+      localStorage.setItem('chatHistory', JSON.stringify(this.messages));
+    } catch (error) {
+      console.error('保存聊天記錄失敗:', error);
+    }
   }
 
   private scrollToBottom() {
     setTimeout(() => {
-      this.messagesContainer.nativeElement.scrollTop = this.messagesContainer.nativeElement.scrollHeight;
+      if (this.messagesContainer?.nativeElement) {
+        this.messagesContainer.nativeElement.scrollTop = this.messagesContainer.nativeElement.scrollHeight;
+      }
     }, 0);
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 }
 

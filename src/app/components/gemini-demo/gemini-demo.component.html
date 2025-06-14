@@ -3,18 +3,33 @@
     <h2>親子教養專家 AI</h2>
   </div>
   <div class="chat-messages" #messagesContainer>
-    <div *ngFor="let msg of messages" [ngClass]="msg.reply ? 'user-message' : 'bot-message'">
+    <div *ngFor="let msg of messages; let i = index" [ngClass]="msg.reply ? 'user-message' : 'bot-message'">
       <div class="message-content">
         <span class="sender">{{ msg.user.name }}</span>
         <span class="date">{{ msg.date | date: 'short' }}</span>
         <p>{{ msg.text }}</p>
+        <!-- 顯示打字指示器 -->
+        <span *ngIf="isStreaming && i === currentStreamingMessageIndex" class="typing-indicator">
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+        </span>
       </div>
     </div>
-    <div *ngIf="isLoading" class="loading">思考中...</div>
+    <div *ngIf="isLoading && !isStreaming" class="loading">準備回應中...</div>
   </div>
-  {{userInput}}
+
   <form class="chat-form" (ngSubmit)="sendMessage()">
-    <input type="text" [(ngModel)]="userInput" name="message" placeholder="輸入您的教養問題..." required />
-    <button type="submit" [disabled]="isLoading">送出</button>
+    <input
+      type="text"
+      [(ngModel)]="userInput"
+      name="message"
+      placeholder="輸入您的教養問題..."
+      [disabled]="isLoading || isStreaming"
+      required
+    />
+    <button type="submit" [disabled]="isLoading || isStreaming">
+      {{ isLoading || isStreaming ? '處理中...' : '送出' }}
+    </button>
   </form>
 </div>
