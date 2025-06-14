@@ -29,4 +29,44 @@ export class GeminiService {
       })
     );
   }
+
+  private prompt = '你是一位親子教養專家，提供專業、溫暖且實用的建議，專注於兒童行為管理、情緒發展和家庭溝通。請用繁體中文回應，語氣親切並簡潔。';
+
+  async generate(textInput: string, history: { text: string; reply: boolean }[]): Promise<string> {
+    try {
+      if (!textInput) return '請輸入問題。';
+
+      // 建立對話內容陣列
+      const contents = [];
+
+      // 加入系統提示作為第一個 user 訊息
+      contents.push({
+        role: 'user',
+        parts: [{ text: this.prompt }]
+      });
+
+      // 加入對話歷史
+      history.forEach(msg => {
+        contents.push({
+          role: msg.reply ? 'user' : 'model',
+          parts: [{ text: msg.text }]
+        });
+      });
+
+      // 加入當前使用者輸入
+      contents.push({
+        role: 'user',
+        parts: [{ text: textInput }]
+      });
+
+      const result = await this.model.generateContent({
+        contents: contents
+      });
+
+      return result.response.text();
+    } catch (error) {
+      console.error('Gemini 生成錯誤:', error);
+      return '抱歉，無法生成回應，請稍後再試。';
+    }
+  }
 }

@@ -1,19 +1,20 @@
-<div class="container">
-  <h1>Gemini AI 文字生成</h1>
-  <div class="input-group">
-    <textarea
-      [(ngModel)]="prompt"
-      placeholder="輸入您的提示，例如：為什麼天空是藍色的？"
-      rows="4"
-      cols="50"
-    ></textarea>
-    <button (click)="generateResponse()" [disabled]="loading">
-      {{ loading ? '生成中...' : '生成' }}
-    </button>
+<div class="chat-container">
+  <div class="chat-header">
+    <h2>親子教養專家 AI</h2>
   </div>
-  <div class="error" *ngIf="error">{{ error }}</div>
-  <div class="response" *ngIf="response">
-    <h2>回應：</h2>
-    <p>{{ response }}</p>
+  <div class="chat-messages" #messagesContainer>
+    <div *ngFor="let msg of messages" [ngClass]="msg.reply ? 'user-message' : 'bot-message'">
+      <div class="message-content">
+        <span class="sender">{{ msg.user.name }}</span>
+        <span class="date">{{ msg.date | date: 'short' }}</span>
+        <p>{{ msg.text }}</p>
+      </div>
+    </div>
+    <div *ngIf="isLoading" class="loading">思考中...</div>
   </div>
+  {{userInput}}
+  <form class="chat-form" (ngSubmit)="sendMessage()">
+    <input type="text" [(ngModel)]="userInput" name="message" placeholder="輸入您的教養問題..." required />
+    <button type="submit" [disabled]="isLoading">送出</button>
+  </form>
 </div>
