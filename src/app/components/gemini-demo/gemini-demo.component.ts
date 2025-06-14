@@ -1,8 +1,10 @@
 import { AfterViewInit, Component, ElementRef, OnInit, ViewChild } from '@angular/core';
 import { GeminiService } from '../../services/gemini.service';
+import { MarkdownService } from '../../services/markdown.service'; // 新增
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { BehaviorSubject } from 'rxjs';
+import { SafeHtml } from '@angular/platform-browser';
 
 @Component({
   selector: 'app-gemini-demo',
@@ -18,9 +20,12 @@ export class GeminiDemoComponent implements OnInit, AfterViewInit {
   isLoading = false;
   isStreaming = false;
   private messagesSubject = new BehaviorSubject<ChatMessage[]>([]);
-   currentStreamingMessageIndex = -1;
+  currentStreamingMessageIndex = -1;
 
-  constructor(private geminiService: GeminiService) {}
+  constructor(
+    private geminiService: GeminiService,
+    private markdownService: MarkdownService // 新增
+  ) {}
 
   ngOnInit() {
     // 從 localStorage 載入對話歷史
@@ -31,7 +36,8 @@ export class GeminiDemoComponent implements OnInit, AfterViewInit {
         // 重新建立 Date 物件，因為 JSON.parse 不會自動轉換日期
         this.messages = parsed.map((msg: any) => ({
           ...msg,
-          date: new Date(msg.date)
+          date: new Date(msg.date),
+          renderedText: this.markdownService.convertToHtml(msg.text) // 轉換 Markdown
         }));
         this.messagesSubject.next(this.messages);
       } catch (error) {
@@ -62,6 +68,7 @@ export class GeminiDemoComponent implements OnInit, AfterViewInit {
 
     const userMessage: ChatMessage = {
       text: this.userInput,
+      renderedText: this.markdownService.convertToHtml(this.userInput), // 轉換使用者輸入
       date: new Date(),
       reply: true,
       user: { name: '您' }
@@ -80,6 +87,7 @@ export class GeminiDemoComponent implements OnInit, AfterViewInit {
     // 建立一個空的機器人訊息用於串流顯示
     const botMessage: ChatMessage = {
       text: '',
+      renderedText: '', // 初始化
       date: new Date(),
       reply: false,
       user: { name: '教養專家' }
@@ -112,6 +120,7 @@ export class GeminiDemoComponent implements OnInit, AfterViewInit {
         if (this.currentStreamingMessageIndex >= 0 &&
             this.currentStreamingMessageIndex < this.messages.length) {
           this.messages[this.currentStreamingMessageIndex].text = fullResponse;
+          this.messages[this.currentStreamingMessageIndex].renderedText = this.markdownService.convertToHtml(fullResponse); // 轉換 Markdown
           this.scrollToBottom();
         }
 
@@ -127,6 +136,7 @@ export class GeminiDemoComponent implements OnInit, AfterViewInit {
         console.log('串流沒有收到內容，使用一般生成方法');
         const fallbackResponse = await this.geminiService.generate(currentInput, historyWithoutCurrent);
         this.messages[this.currentStreamingMessageIndex].text = fallbackResponse;
+        this.messages[this.currentStreamingMessageIndex].renderedText = this.markdownService.convertToHtml(fallbackResponse); // 轉換 Markdown
       }
 
       // 串流完成，保存最終結果
@@ -149,6 +159,7 @@ export class GeminiDemoComponent implements OnInit, AfterViewInit {
 
         this.messages.push({
           text: fallbackResponse,
+          renderedText: this.markdownService.convertToHtml(fallbackResponse), // 轉換 Markdown
           date: new Date(),
           reply: false,
           user: { name: '教養專家' }
@@ -157,6 +168,7 @@ export class GeminiDemoComponent implements OnInit, AfterViewInit {
         console.error('備用方法也失敗:', fallbackError);
         this.messages.push({
           text: '抱歉，發生錯誤，請稍後再試。',
+          renderedText: this.markdownService.convertToHtml('抱歉，發生錯誤，請稍後再試。'), // 轉換 Markdown
           date: new Date(),
           reply: false,
           user: { name: '教養專家' }
@@ -187,6 +199,7 @@ ${historyText}
       // 清空舊歷史，存入摘要作為新歷史
       this.messages = [{
         text: `對話摘要：\n${summary}`,
+        renderedText: this.markdownService.convertToHtml(`對話摘要：\n${summary}`), // 轉換 Markdown
         date: new Date(),
         reply: false,
         user: { name: '教養專家' }
@@ -203,7 +216,9 @@ ${historyText}
 
   private saveToLocalStorage() {
     try {
-      localStorage.setItem('chatHistory', JSON.stringify(this.messages));
+      // 儲存時移除 renderedText，因為它是衍生數據
+      const messagesToSave = this.messages.map(({ renderedText, ...msg }) => msg);
+      localStorage.setItem('chatHistory', JSON.stringify(messagesToSave));
     } catch (error) {
       console.error('保存聊天記錄失敗:', error);
     }
@@ -224,6 +239,7 @@ ${historyText}
 
 interface ChatMessage {
   text: string;
+  renderedText?: SafeHtml; // 新增用於儲存轉換後的 HTML
   date: Date;
   reply: boolean;
   user: { name: string; avatar?: string };
